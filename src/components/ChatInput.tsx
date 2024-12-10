@@ -4,6 +4,7 @@ import { useChatStore } from "@/store/chatStore";
 import { ImagePlus, Send } from "lucide-react";
 import { useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { sendChatMessage } from "@/services/xai";
 
 export const ChatInput = () => {
   const [message, setMessage] = useState("");
@@ -32,36 +33,47 @@ export const ChatInput = () => {
         timestamp: Date.now(),
       };
 
+      let base64Image: string | undefined;
       if (fileInputRef.current?.files?.length) {
         const file = fileInputRef.current.files[0];
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64Image = reader.result as string;
-          addMessage(currentChatId!, {
-            ...userMessage,
-            imageUrl: base64Image,
-          });
-        };
-        reader.readAsDataURL(file);
-      } else {
-        addMessage(currentChatId!, userMessage);
+        base64Image = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(file);
+        });
+        userMessage.imageUrl = base64Image;
       }
 
-      // TODO: Implement actual API call to xAI
+      addMessage(currentChatId!, userMessage);
+
+      const chatMessages = [
+        {
+          role: "system" as const,
+          content: "You are Grok, a chatbot inspired by the Hitchhikers Guide to the Galaxy.",
+        },
+        {
+          role: "user" as const,
+          content: message,
+          ...(base64Image && { image_url: base64Image }),
+        },
+      ];
+
+      const aiContent = await sendChatMessage(chatMessages, apiKey);
+      
       const aiResponse = {
         id: crypto.randomUUID(),
         role: "assistant" as const,
-        content: "This is a mock response. Implement xAI API integration.",
+        content: aiContent,
         timestamp: Date.now(),
       };
+      
       addMessage(currentChatId!, aiResponse);
-
       setMessage("");
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to send message",
+        description: error instanceof Error ? error.message : "Failed to send message",
         variant: "destructive",
       });
     } finally {
